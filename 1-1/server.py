@@ -1,13 +1,5 @@
 import argparse
 import socket
-import threading
-import json
-
-KEEPALIVE_TIMEOUT = 60  # Keepalive timeout in seconds
-DICTIONARY_FILE = 'password.txt'
-clients = []
-# Lock for clients dictionary to ensure thread-safety
-clients_lock = threading.Lock()
 
 
 def getHostIP():
@@ -22,44 +14,11 @@ def getHostIP():
         sock.close()
     return HOST
 
-
-def handle_client(conn, addr, users_list, n_clients):
-    print(f'[SERVER] New client connected: {addr}')
-    clients.append(conn)
-    while True:
-        # try:
-        with open(DICTIONARY_FILE, "r") as f:
-            lines = f.readlines()
-
-        # split_index = len(lines) // 2
-        # part1 = lines[:split_index]
-        # part2 = lines[split_index:]
-        data1 = json.dumps(lines)
-        conn.send(data1.encode())
-        data = conn.recv(1024).decode()  # Receive data from client
-        if not data:
-            break
-
-        # Broadcast message to all clients when one client has found the answer
-        if 'PASSWORD CRACKED!' in data:
-            for client_addr in clients:
-                client_conn = clients[client_addr]
-                client_conn.sendall(
-                    '[SERVER] Answer found by another client'.encode())
-
-        # except Exception as e:
-        #     print(f'[SERVER] Error handling client {addr}: {e}')
-        #     break
-
-    # Remove client from clients dictionary when the connection is closed
-    with clients_lock:
-        clients.pop(addr)
-    print(f'[SERVER] Client {addr} disconnected')
-    conn.close()
+def handle_client(conn, users_list, n_clients):
+    
 
 
 def main():
-    """Main server function"""
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', type=str, dest='shadowFile', required=True)
     parser.add_argument('-t', type=int, dest='noOfClients', default=1)
@@ -69,7 +28,7 @@ def main():
 
     HOST = getHostIP()
     PORT = args.PORT
-    # SHADOW_FILE = args.shadowFile
+    SHADOW_FILE = args.shadowFile
     NUMBER_OF_CLIENTS = args.noOfClients
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -97,7 +56,7 @@ def main():
 
         while True:
             conn, addr = server_socket.accept()
-            handle_client(conn, addr, users_list, NUMBER_OF_CLIENTS)
+            handle_client(conn, users_list)
 
         # for user in users_list:
         #     crackPassword(user.strip('\n'), args.threads) # this is actually gonna happen in client
