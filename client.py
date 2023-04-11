@@ -1,134 +1,126 @@
-from multiprocessing import Process, Lock, Value
-import multiprocessing
-import utils
-from hmac import compare_digest as compare_hash
-from datetime import timedelta
 import argparse
-import time
+import pickle
+import multiprocessing
 import socket
+import time
+from hmac import compare_digest as compare_hash
+import crypt
+from ctypes import c_wchar_p
+import select
 
-PORT = 8000
 
-def check_bcrypt(user_line):
-    if user_line.split(":")[1].split("$", 3)[1] == "2b":
-        return True
-    return False
+def find_algo(info_dict):
+    if info_dict['algo'] == "$y$":
+        info_dict['algo_name'] = "yescrypt"
+    elif info_dict['algo'] == "$6$":
+        info_dict['algo_name'] = "sha256"
+    elif info_dict['algo'] == "$5$":
+        info_dict['algo_name'] = "sha512"
+    elif info_dict['algo'] == "$sha1$":
+        info_dict['algo_name'] = "sha1"
+    elif info_dict['algo'] == "$2b$":
+        info_dict['algo_name'] = "bcrypt"
+        info_dict['salt'] = info_dict['password'][:22]
+        info_dict['password'] = info_dict['password'][23:]
+    elif info_dict['algo'] == "$7$":
+        info_dict['algo_name'] = "scrypt"
+    elif info_dict['algo'] == "$md5$":
+        info_dict['algo_name'] = "sun md5"
+    elif info_dict['algo'] == "$1$":
+        info_dict['algo_name'] = "md5crypt"
+    elif info_dict['algo'] == "$_$":
+        info_dict['algo_name'] = "bsdicrypt"
+    elif info_dict['algo'] == "$$":
+        info_dict['algo_name'] = "descrypt"
+        info_dict['salt'] = ""
+    elif info_dict['algo'] == "$3$":
+        info_dict['algo_name'] = "nthash"
+    else:
+        pass
 
-# Print information before the password is cracked
-def printInformation(user, hash_name, salt, hashed_pwd):
-    print("======================================================")
-    print(f"User:        {user}")
-    print(f"Hash Alg.:   {hash_name}")
-    print(f"Salt:        {salt}")
-    print(f"Hashed PWD:  {hashed_pwd}")
-    print(f"PID:  {multiprocessing.current_process().pid}")
 
-# Print information after password is cracked
-def printInformation2(start, end, attempts):
-    print(f"Time Taken: {str(timedelta(seconds=(end - start)))}")
-    print(f"Attempts Made: {str(attempts.value)}")
-    print("======================================================")
+def find_password(user, count, files, length, found, stop_event, lock, passwd, cs):
+    cs.setblocking(False)
+    print(F"[STARING] Process_ID: {multiprocessing.current_process().pid}")
+    while not found.value:
+        for r in range(length[0], length[1]):
+            try:
+                data = cs.recv(1024).decode()
+                if data == 'break':
+                    print("[STOPPING]Password found by other client")
+                    stop_event.set()
+                    break
+            except socket.error:
+                pass
+            line = files[r].strip()
+            hashed = crypt.crypt(line, salt=user["hashed"])
+            with lock:
+                count.value = count.value + 1
+            if compare_hash(hashed, user['hashed']):
+                found.value = True
+                passwd.value = line
+                print(f"\n[Match Found] {user['user']}: {passwd.value}\tFound by P_ID: {multiprocessing.current_process().pid}")
+                stop_event.set()
+            else:
+                print(f"[FAILED] {line}")
 
-def extractShadowFileData(user_line):
-    user = user_line.split(":")[0]
-    try:
-        hash_alg, salt, hashed_pwd = user_line.split(":")[1].split("$", 3)[1:]
-        if check_bcrypt(user_line):
-            salt = hashed_pwd[:22]
-            hashed_pwd = hashed_pwd[23:]
-    except:
-        hashed_pwd = user_line.split(":")[1][3:]
-        hash_alg = "0"
-        salt = user_line.split(":")[1][:2]
 
-    return {
-        "user": user,
-        "salt": salt,
-        "hashed_pwd": hashed_pwd,
-        "hash_alg": hash_alg
-    }
-
-def createProcesses(pwds, user_line, threads):
-    found = Value('b', False)
-    attempts = Value('i', 0)
-    lock = Lock()
-    chunk_size = len(pwds) // threads
-
-    stop_event = multiprocessing.Event()
-
-    chunks = [pwds[i: i + chunk_size] for i in range(0, len(pwds), chunk_size)]
-
-    try:
-        processes = []
-        start = time.perf_counter()
-        for chunk in chunks:
-            process = Process(target=comparePassword, args=(
-                user_line, chunk, found, attempts, lock, stop_event))
-
-            processes.append(process)
-            process.start()
-
+def decrypt(all_users, threads, cs):
+    with open('my_file.txt', 'r') as f:
+        files = f.readlines()
+    num_lines = all_users[-1]['chunk'][1]-all_users[-1]['chunk'][0]
+    for i in all_users[:-1]:
+        start_time = time.perf_counter()
+        stop_event = multiprocessing.Event()
+        manager = multiprocessing.Manager()
+        lock = multiprocessing.Lock()
+        passwd = manager.Value(str, '')
+        count = manager.Value('i', 0)
+        found = manager.Value('b', False)
+        find_algo(i)
+        chunks = (all_users[-1]['chunk'][0], all_users[-1]['chunk'][0]+(num_lines // threads + num_lines % threads))
+        process = []
+        print(
+                f"\n----------------------------------------------\n[WORKING ON] User: {i['user']}\tAlgorithm: {i['algo_name']}\tSalt:{i['salt']}")
+        for _ in range(threads):
+            p = multiprocessing.Process(target=find_password,
+                                        args=(i, count, files, chunks, found, stop_event, lock, passwd, cs))
+            chunks = (chunks[1], (chunks[1] + num_lines // threads))
+            p.start()
+            process.append(p)
         stop_event.wait()
-        for process in processes:
-            process.terminate()
+        for p in process:
+            p.terminate()
 
-        end = time.perf_counter()
-        printInformation2(start, end, attempts)
-    except Exception as e:
-        print(f'\nAn Exception Occured - {repr(e)}')
+        if found.value:
+            stop_time = time.perf_counter()
+            cracked_passwd = passwd.value
+            info = {'user': i['user'], 'passwd': cracked_passwd, 'found': True, 'time': stop_time - start_time, 'algo': i['algo_name'], 'salt': i['salt'], 'count': count.value}
+            print(
+                f"Time Taken: {stop_time - start_time} secs\tWords attempted: {count.value}.")
+            print(f"----------------------------------------------\n")
+        else:
+            info = {'user': i['user'], 'found': False}
+            stop_time = time.perf_counter()
+            print(
+                f"[Match Not Found] {i['user']}\nTime Taken: {stop_time - start_time} secs\tWords attempted: {count.value}.")
+        info = pickle.dumps(info)
+        cs.send(info)
 
-def comparePassword(user_line, pwds, found, attempts, lock, stop_event):
-    shadowData = extractShadowFileData(user_line)
 
-    user = shadowData["user"]
-    salt = shadowData["salt"]
-    hashed_pwd = shadowData["hashed_pwd"]
-    hash_alg = shadowData["hash_alg"]
-
-    hash_name, hash_func = utils.HASH_ALGS[hash_alg]
-
-    time.sleep(2)
-    printInformation(user, hash_name, salt, hashed_pwd)
-
-    for pwd in pwds:
-        with lock:
-            attempts.value = attempts.value + 1
-
-        created_pwd = hash_func(pwd.strip(), salt=user_line.split(":")[1])
-
-        if compare_hash(user_line.split(":")[1], created_pwd):
-            found.value = True
-            print(f"\nPASSWORD CRACKED! {pwd}")
-            stop_event.set()
-
-def crackPassword(user_line, threads):
-    with open(utils.PASSWORD_LIST[0], mode='r') as pwd_dict:
-        pwds = pwd_dict.readlines()
-
-    createProcesses(pwds, user_line, threads)
-
-    pwd_dict.close()
-    
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-s', type=str, dest='IP', required=True)
-    parser.add_argument('-p', type=int, default=PORT, dest='PORT')
+    parser.add_argument('-s', type=str, dest='dst_ip', required=True)
+    parser.add_argument('-p', type=int, default=8000, dest='port')
     args = parser.parse_args()
 
-    ADDR =  ADDR = (args.IP , args.PORT if (args.PORT) else PORT)
-    interrupted = False
-    try:
-       print(f'Starting Client on {ADDR}')
-       client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-       client.connect(ADDR)
-
-    except KeyboardInterrupt as keyError:
-        print(f'\nShutting Down - {repr(keyError)}')
-        assert not interrupted
-    except Exception as e:
-        print(f'\nAn Exception Occured - {repr(e)}')
-        assert not interrupted
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect((args.dst_ip, args.port))
+    info = client_socket.recv(4096)
+    info = pickle.loads(info)
+    decrypt(info, 6, client_socket)
 
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
