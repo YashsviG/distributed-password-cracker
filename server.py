@@ -43,34 +43,6 @@ def accept(s_socket, user_list, master_array, stop_event):
 
     stop_event.set()
 
-
-
-    # while True:
-    #     try:
-    #         # print(f"{conn.getpeername()[0]}: {curr} : {master_array[curr]}: {master_array[0]}")
-    #         data = conn.recv(4096)
-    #         if data:
-    #             data = pickle.loads(data)
-    #             if data['found']:
-    #                 master_array[user_dict[data['user']]] = 1
-    #                 print(f"{conn.getpeername()[0]}: [FOUND] Password Found\nUser:{data['user']}\tPassword:{data['passwd']}")
-    #                 curr+=1
-    #             else:
-    #                 print(f"{conn.getpeername()[0]}: [NOT FOUND] Password NOT Found.")
-    #                 curr+=1
-    #             continue
-    #
-    #         elif master_array[curr]:
-    #             print(f"{conn.getpeername()[0]}: [UPDATE] Password found by another Client.")
-    #             conn.send(b'break')
-    #             curr += 1
-    #
-    #         print(master_array[curr] + conn.getpeername()[0])
-    #         if curr >= len(user_dict):
-    #             break
-    #     except socket.error:
-    #         pass
-
 def extract_salt_passwd(string):
     dictionary = {}
     if string:
