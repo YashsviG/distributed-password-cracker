@@ -31,12 +31,11 @@ def find_algo(info_dict):
     
     return info_dict
 
+
 def extract_bcrypt_salt(password):
-    # extract salt from bcrypt password hash
     salt = password[:22]
     password = password[22:]
     return salt, password
-
 
 
 def find_password(user, count, files, length, found, stop_event, lock, passwd, cs):
@@ -66,7 +65,7 @@ def find_password(user, count, files, length, found, stop_event, lock, passwd, c
 
 
 def decrypt(all_users, threads, cs):
-    with open('my_file.txt', 'r') as f:
+    with open('password.txt', 'r') as f:
         files = f.readlines()
     num_lines = all_users[-1]['chunk'][1]-all_users[-1]['chunk'][0]
     for i in all_users[:-1]:
