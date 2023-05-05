@@ -10,33 +10,33 @@ import select
 
 
 def find_algo(info_dict):
-    if info_dict['algo'] == "$y$":
-        info_dict['algo_name'] = "yescrypt"
-    elif info_dict['algo'] == "$6$":
-        info_dict['algo_name'] = "sha256"
-    elif info_dict['algo'] == "$5$":
-        info_dict['algo_name'] = "sha512"
-    elif info_dict['algo'] == "$sha1$":
-        info_dict['algo_name'] = "sha1"
-    elif info_dict['algo'] == "$2b$":
-        info_dict['algo_name'] = "bcrypt"
-        info_dict['salt'] = info_dict['password'][:22]
-        info_dict['password'] = info_dict['password'][23:]
-    elif info_dict['algo'] == "$7$":
-        info_dict['algo_name'] = "scrypt"
-    elif info_dict['algo'] == "$md5$":
-        info_dict['algo_name'] = "sun md5"
-    elif info_dict['algo'] == "$1$":
-        info_dict['algo_name'] = "md5crypt"
-    elif info_dict['algo'] == "$_$":
-        info_dict['algo_name'] = "bsdicrypt"
-    elif info_dict['algo'] == "$$":
-        info_dict['algo_name'] = "descrypt"
-        info_dict['salt'] = ""
-    elif info_dict['algo'] == "$3$":
-        info_dict['algo_name'] = "nthash"
-    else:
-        pass
+    algo_names = {
+        "$y$": "yescrypt",
+        "$6$": "sha256",
+        "$5$": "sha512",
+        "$sha1$": "sha1",
+        "$2b$": "bcrypt",
+        "$7$": "scrypt",
+        "$md5$": "sun md5",
+        "$1$": "md5crypt",
+        "$_$": "bsdicrypt",
+        "$$": "descrypt",
+        "$3$": "nthash"
+    }
+    
+    info_dict['algo_name'] = algo_names.get(info_dict['algo'], "unknown")
+    
+    if info_dict['algo'] == "$2b$":
+        info_dict['salt'], info_dict['password'] = extract_bcrypt_salt(info_dict['password'])
+    
+    return info_dict
+
+def extract_bcrypt_salt(password):
+    # extract salt from bcrypt password hash
+    salt = password[:22]
+    password = password[22:]
+    return salt, password
+
 
 
 def find_password(user, count, files, length, found, stop_event, lock, passwd, cs):
