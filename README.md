@@ -1,4 +1,4 @@
-# Distributed Password Cracker - Dictionary Attack
+# Distributed Password Cracker - Dictionary Attack/Brute Force
 #### Ethical Distributed Password Cracker
 The password cracker aims to crack passwords created using hashing algorithms:
 1. Yescrypt
